@@ -19,6 +19,6 @@ I chose random 200 data points.
 I heavily depends on the YouTube video by Data Science Dojo: Introduction to Text Analytics in R.
 
 The data set link is : https://www.kaggle.com/c/nlp-getting-started
-The YouTube link is : https://www.youtube.com/playlist?list=PL8eNk_zTBST8olxIRFoo0YeXxEOkYdoxi
+The YouTube link for DS Dojo is : https://www.youtube.com/playlist?list=PL8eNk_zTBST8olxIRFoo0YeXxEOkYdoxi
 
 Thank You
