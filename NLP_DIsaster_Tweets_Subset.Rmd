@@ -1,0 +1,258 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r Importing the Dataset and Libraries}
+
+library(tidyverse)
+library(caret)
+library(quanteda)
+library(readxl)
+data <- read_excel("C:/Users/Sunnation/Desktop/Subset_Disaster_Tweet/DSS.xlsx")
+
+```
+
+```{r Spliting the Dataset & Pre-Process}
+
+#removing the column that we don't need like ID
+data.raw<- data[,-1]
+
+#looking for NAs
+sum(is.na(data.raw))
+
+#there are 14 NAs so we will remove those NAs
+data.raw<- data.raw[-which(is.na(data.raw$text)),]
+sum(is.na(data.raw))
+
+#looking the proportion of 0 and 1
+prop.table(table(data.raw$target))
+
+#spliting the data in same proportion
+set.seed(12345)
+index<- createDataPartition(data.raw$target, times=1,p=0.8, list=FALSE)
+train.raw<- data.raw[index,]
+test.raw<- data.raw[-index,]
+
+#checking the proportion of the test and train data
+prop.table(table(train.raw$target))
+prop.table(table(test.raw$target))
+
+#changing the names of the 0 and 1 to not_disaster and disaster
+train.raw$target<- ifelse(train.raw$target==0,"not_disaster","disaster")
+test.raw$target<- ifelse(test.raw$target==0,"not_disaster","disaster")
+
+#converting the target as factor
+train.raw$target<- as.factor(train.raw$target)
+test.raw$target<- as.factor(test.raw$target)
+
+#adding the text length on train and test data
+train.raw$textLength<- nchar(train.raw$text)
+test.raw$textLength<- nchar(test.raw$text)
+```
+
+```{r Pre-Processing and DFM}
+#converting the text part to tokens
+train.token<- tokens(train.raw$text,
+                     what="word",
+                     remove_numbers = TRUE,
+                     remove_punct = TRUE,
+                     remove_symbols = TRUE,
+                     remove_separators = TRUE,
+                     remove_twitter = TRUE,
+                     remove_hyphens = TRUE,
+                     remove_url = TRUE)
+
+#to lower
+train.token<- tokens_tolower(train.token)
+
+#removing stop_words
+train.token<- tokens_select(train.token, pattern = stopwords(), selection="remove")
+
+#stemming the words
+train.token<- tokens_wordstem(train.token, language = "english")
+
+#transforming to DFM 
+train.DFM<- dfm(train.token, tolower = FALSE)
+
+#converting the DFM to data frame
+train.DFM.df<- convert(train.DFM, to="data.frame")
+
+#making names for the character vector
+names(train.DFM.df)<- make.names(names(train.DFM.df))
+
+sum(is.na(train.DFM.df))
+
+#removing the first column
+train.DFM.df<- train.DFM.df[,-1]
+
+```
+
+```{r TF-IDF}
+
+#function to calculate TF
+term.freq<- function(row){
+  row/sum(row)
+}
+
+#function to calculate IDF
+inv.doc.freq<- function(col){
+  corpus.size<- length(col)
+  doc.count<- length(which(col>0))
+  log10(corpus.size/doc.count)
+}
+
+#function for tf-idf
+tf.idf<- function(tf, idf){
+  tf*idf
+}
+
+#applying tf to document
+train.tf<- apply(train.DFM.df, 1, term.freq)
+
+#applying idf to document
+train.idf<- apply(train.DFM.df,2, inv.doc.freq)
+
+#getting TF-IDF combined
+train.tfidf<- apply(train.tf,2, tf.idf, idf=train.idf)
+
+sum(is.na(train.tfidf))
+
+#transposing the matrix
+train.tfidf<- t(train.tfidf)
+
+sum(!complete.cases(train.tfidf))
+
+```
+
+```{r SVD}
+#installing the required library
+library(irlba)
+train.irlba<- irlba(t(train.tfidf), nv=100, maxit=600)
+
+
+#extracting the singular vector
+train.svd<- train.irlba$v
+
+#adding the target column in the extracted singular vector and converting to data frme
+train.svd.df<- data.frame(target=train.raw$target, train.svd)
+
+#sigma inverse
+sigma.inverse<- 1/train.irlba$d
+
+#u.transpose
+u.transpose<- t(train.irlba$u)
+```
+
+```{r First Model-Decision Tree}
+#creating the same proportion in the 0 and 1
+cv.folds<- createFolds(train.raw$target,k=10)
+cv.control<- trainControl(method="repeatedcv",
+                          number=10,
+                          repeats=3,
+                          index=cv.folds)
+
+#making independent and dependent variables for model
+x1<- train.svd.df[,-1]
+y1<- train.svd.df[,1]
+
+#making the model
+model.rf.1<- train(x=x1,
+                       y=y1,
+                       method="rf",
+                       trControl = cv.control,
+                       tuneLength = 7)
+confusionMatrix(model.rf.1)
+
+```
+
+
+```{r Adding the textLenght & new model}
+#variables
+x2<- cbind(x1,textLength=train.raw$textLength)
+y2<- train.svd.df[,1]
+
+#another random forest
+model.rf.1<- train(x=x2,
+                   y=y2,
+                   method="rf",
+                   trControl = cv.control,
+                   tuneLength = 7,
+                   importance=TRUE)
+confusionMatrix(model.rf.1)
+
+```
+
+```{r Pre-processing test data}
+#changing the test data to tokens
+test.token<- tokens(test.raw$text, 
+                    what="word",
+                    remove_numbers = TRUE,
+                     remove_punct = TRUE,
+                     remove_symbols = TRUE,
+                     remove_separators = TRUE,
+                     remove_twitter = TRUE,
+                     remove_hyphens = TRUE,
+                     remove_url = TRUE)
+
+#to lower
+test.token<- tokens_tolower(test.token)
+
+#removing stop_words
+test.token<- tokens_select(test.token, pattern = stopwords(), selection="remove")
+
+#stemming the words
+test.token<- tokens_wordstem(test.token, language = "english")
+
+#transforming to DFM 
+test.DFM<- dfm(test.token, tolower = FALSE)
+
+#transforming the test data to same dimension of train data
+
+test.DFM<- dfm_select(test.DFM,pattern = train.DFM)
+
+#converting the DFM to data frame
+test.DFM.df<- convert(test.DFM, to="data.frame")
+
+#making names for the character vector
+names(test.DFM.df)<- make.names(names(test.DFM.df))
+
+sum(is.na(test.DFM.df))
+
+#removing the first column
+test.DFM.df<- test.DFM.df[,-1]
+
+#calculating tf for 
+test.tf<- apply(test.DFM.df,1,term.freq)
+
+#calculate the IDF for test data, IDF value maintain from the train data
+test.tfidf<- apply(test.tf,2, tf.idf, idf=train.idf)
+
+#transpose the matrix
+test.tfidf<- t(test.tfidf)
+
+#looking for NAs
+sum(is.na(test.tfidf)) #no NAs
+
+#SVD for test data
+test.svd<- t(sigma.inverse*u.transpose %*% t(test.tfidf))
+
+
+#saving the vector data
+test.svd.df<- data.frame(test.svd, textLength= test.raw$textLength)
+
+sum(is.na(test.svd.df))
+
+#adding the text length
+test.svd.df$textLength<- test.raw$textLength
+```
+
+```{r Predicting the Test Data}
+pred.rf<- predict(model.rf.1,test.svd.df)
+
+confusionMatrix(pred.rf,test.raw$target)
+```
+
