@@ -16,7 +16,7 @@ and Specificity : 0.7273. As you all can guess, the model isn't perfect. However
 The data is randomly picked subset from the Kaggle dataset "Real or Not? NLP with Disaster Tweets". Due to lack of computational power,
 I chose random 200 data points.
 
-I heavily depends on the YouTube video by Data Science Dojo: Introduction to Text Analytics in R.
+Thanks to the YouTube videos by Data Science Dojo: Introduction to Text Analytics in R.
 
 The data set link is : https://www.kaggle.com/c/nlp-getting-started
 The YouTube link for DS Dojo is : https://www.youtube.com/playlist?list=PL8eNk_zTBST8olxIRFoo0YeXxEOkYdoxi
